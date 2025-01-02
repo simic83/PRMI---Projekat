@@ -4,7 +4,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{6A4FBE96-37DD-4D80-BDC6-A2BDFA556FF1}</ProjectGuid>
+    <ProjectGuid>{6A5632D8-1DBF-47DF-A0B5-5B526A74B8B0}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <RootNamespace>TCPServer</RootNamespace>
     <AssemblyName>TCPServer</AssemblyName>
@@ -48,6 +48,12 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ClassLibrary\ClassLibrary.csproj">
+      <Project>{93fb7f9c-0940-439a-96e2-e4810f3d3e83}</Project>
+      <Name>ClassLibrary</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
