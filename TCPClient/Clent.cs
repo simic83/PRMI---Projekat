@@ -14,32 +14,20 @@ namespace TCPClient
         static void Main(string[] args)
         {
             #region Povezivanje
-            Socket clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
-            {
-                Blocking = false
-            };
+            Socket clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
             IPEndPoint serverEP = new IPEndPoint(IPAddress.Loopback, 50001);
 
             try
             {
                 clientSocket.Connect(serverEP);
+                Console.WriteLine("Klijent je povezan na server!");
             }
-            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.WouldBlock)
+            catch (SocketException ex)
             {
-                Console.WriteLine("Povezivanje u toku...");
+                Console.WriteLine($"Greška prilikom povezivanja: {ex.Message}");
+                return;
             }
-
-            while (!clientSocket.Connected)
-            {
-                Thread.Sleep(100);
-                if (clientSocket.Poll(0, SelectMode.SelectWrite))
-                {
-                    clientSocket.Connect(serverEP);
-                }
-            }
-
-            Console.WriteLine("Klijent je povezan na server!");
             #endregion
 
             BinaryFormatter formatter = new BinaryFormatter();
@@ -72,38 +60,70 @@ namespace TCPClient
             }
             #endregion
 
-            #region Simulacija eksperimenta
-            Random random = new Random();
-            for (int i = 0; i < 10; i++) // 10 iteracija
+            #region Prijem trajanja eksperimenta
+            byte[] trajanjeData = new byte[4];
+            try
             {
-                string simbol = random.Next(2) == 0 ? "X" : "O"; // Nasumičan simbol
+                int received = clientSocket.Receive(trajanjeData);
+                if (received > 0)
+                {
+                    int trajanjeEksperimenta = BitConverter.ToInt32(trajanjeData, 0);
+                    Console.WriteLine($"Trajanje eksperimenta primljeno: {trajanjeEksperimenta} sekundi");
+
+                    // Pokretanje simulacije
+                    SimulacijaEksperimenta(clientSocket, formatter, trajanjeEksperimenta);
+                }
+                else
+                {
+                    Console.WriteLine("Server nije poslao trajanje eksperimenta. Veza se zatvara.");
+                }
+            }
+            catch (SocketException ex)
+            {
+                Console.WriteLine($"Greška prilikom prijema trajanja: {ex.Message}");
+            }
+            #endregion
+
+            #region Zatvaranje
+            Console.WriteLine("Klijent završava sa radom.");
+            clientSocket.Close();
+            #endregion
+        }
+
+        static void SimulacijaEksperimenta(Socket clientSocket, BinaryFormatter formatter, int trajanjeEksperimenta)
+        {
+            Random random = new Random();
+            Stopwatch ukupanTajmer = Stopwatch.StartNew();
+
+            while (ukupanTajmer.Elapsed.TotalSeconds < trajanjeEksperimenta)
+            {
+                string simbol = random.Next(2) == 0 ? "X" : "O";
                 Console.WriteLine($"Prikazan simbol: {simbol}");
 
-                Stopwatch stopwatch = Stopwatch.StartNew(); // Početak merenja vremena reakcije
+                Stopwatch stopwatch = Stopwatch.StartNew();
                 string pritisnutiSimbol = "Ignorisano";
-                bool tacno = simbol == "X";
+                bool tacno = (simbol == "X");
 
-                // Hvatanje reakcije unutar vremenskog ograničenja
-                while (stopwatch.ElapsedMilliseconds < 2000) // Maksimalno 2 sekunde za reakciju
+                while (stopwatch.ElapsedMilliseconds < 2000)
                 {
-                    if (Console.KeyAvailable) // Provera da li je pritisnut neki taster
+                    if (Console.KeyAvailable)
                     {
-                        var key = Console.ReadKey(true); // Čitanje tastera bez prikazivanja na konzoli
-                        if (key.Key == ConsoleKey.Spacebar) // Provera da li je pritisnut Space
+                        var key = Console.ReadKey(true);
+                        if (key.Key == ConsoleKey.Spacebar)
                         {
                             pritisnutiSimbol = "O";
-                            tacno = simbol == "O"; // Tačno je samo ako je simbol bio "O"
+                            tacno = (simbol == "O");
                             break;
                         }
                     }
                 }
 
-                stopwatch.Stop(); // Završetak merenja vremena
+                stopwatch.Stop();
 
                 Dogadjaj dogadjaj = new Dogadjaj
                 {
                     PrikazaniSimbol = simbol,
-                    ReakcionoVreme = stopwatch.Elapsed.TotalSeconds, // Vreme u sekundama
+                    ReakcionoVreme = stopwatch.Elapsed.TotalSeconds,
                     PritisnutiSimbol = pritisnutiSimbol,
                     Tacnost = tacno
                 };
@@ -115,15 +135,9 @@ namespace TCPClient
                     clientSocket.Send(data);
                     Console.WriteLine($"Reakcija poslata: {dogadjaj.PritisnutiSimbol}, Tačnost: {dogadjaj.Tacnost}");
                 }
-
-                Thread.Sleep(1000); // Pauza između prikaza simbola
             }
-            #endregion
 
-            #region Zatvaranje
-            Console.WriteLine("Klijent završava sa radom.");
-            clientSocket.Close();
-            #endregion
+            Console.WriteLine("Eksperiment završen.");
         }
     }
 }

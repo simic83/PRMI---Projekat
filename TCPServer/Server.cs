@@ -12,50 +12,72 @@ namespace TCPServer
     {
         static void Main(string[] args)
         {
-            #region Inicijalizacija i povezivanje
+            #region Povezivanje
             Socket serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             IPEndPoint serverEP = new IPEndPoint(IPAddress.Any, 50001);
             serverSocket.Bind(serverEP);
-            serverSocket.Listen(5);
+            serverSocket.Listen(1);
 
             Console.WriteLine($"Server je spreman na {serverEP}");
-            Socket acceptedSocket = serverSocket.Accept();
-            Console.WriteLine($"Povezan klijent: {acceptedSocket.RemoteEndPoint}");
+            Socket clientSocket = serverSocket.Accept();
+            Console.WriteLine($"Povezan klijent: {clientSocket.RemoteEndPoint}");
             #endregion
 
             BinaryFormatter formatter = new BinaryFormatter();
-            Ispitanik ispitanik = null;
             List<Dogadjaj> dogadjaji = new List<Dogadjaj>();
 
-            #region Prijem podataka
+            #region Prijem podataka o ispitaniku
             try
             {
                 byte[] buffer = new byte[1024];
-                int receivedBytes = acceptedSocket.Receive(buffer);
+                clientSocket.Receive(buffer);
 
                 using (MemoryStream ms = new MemoryStream(buffer))
                 {
-                    ispitanik = (Ispitanik)formatter.Deserialize(ms);
-                    Console.WriteLine($"Ispitanik prijavljen: {ispitanik.Ime} {ispitanik.Prezime}, ID: {ispitanik.ID}, Starost: {ispitanik.Starost}");
+                    Ispitanik ispitanik = (Ispitanik)formatter.Deserialize(ms);
+                    Console.WriteLine($"Ispitanik prijavljen: {ispitanik.Ime} {ispitanik.Prezime}");
                 }
+
+                // Slanje trajanja eksperimenta
+                Console.Write("Unesite trajanje eksperimenta (u sekundama): ");
+                int trajanjeEksperimenta = int.Parse(Console.ReadLine());
+                byte[] trajanjeData = BitConverter.GetBytes(trajanjeEksperimenta);
+                clientSocket.Send(trajanjeData);
+                Console.WriteLine("Trajanje eksperimenta poslato klijentu.");
+
+                // Početak prikupljanja događaja
+                Console.WriteLine("Čekanje podataka o događajima...");
+                PrimiDogadjaje(clientSocket, formatter, dogadjaji);
             }
             catch (SocketException ex)
             {
-                Console.WriteLine($"Greška prilikom prijema podataka o ispitaniku: {ex.Message}");
+                Console.WriteLine($"Greška: {ex.Message}");
+                clientSocket.Close();
             }
+            #endregion
 
+            #region Zatvaranje
+            Console.WriteLine("Server završava sa radom.");
+            clientSocket.Close();
+            serverSocket.Close();
+            #endregion
+        }
+
+        static void PrimiDogadjaje(Socket clientSocket, BinaryFormatter formatter, List<Dogadjaj> dogadjaji)
+        {
             while (true)
             {
                 try
                 {
                     byte[] buffer = new byte[1024];
-                    int receivedBytes = acceptedSocket.Receive(buffer);
-                    if (receivedBytes == 0) break;
+                    int receivedBytes = clientSocket.Receive(buffer);
+                    if (receivedBytes == 0) break; // Klijent zatvorio vezu
 
                     using (MemoryStream ms = new MemoryStream(buffer))
                     {
                         Dogadjaj dogadjaj = (Dogadjaj)formatter.Deserialize(ms);
                         dogadjaji.Add(dogadjaj);
+
                         Console.WriteLine($"Primljen događaj: {dogadjaj.PrikazaniSimbol}, " +
                                           $"Reakcija: {dogadjaj.PritisnutiSimbol}, " +
                                           $"Reakciono vreme: {dogadjaj.ReakcionoVreme:F2} sekunde, " +
@@ -64,13 +86,17 @@ namespace TCPServer
                 }
                 catch (SocketException ex)
                 {
-                    Console.WriteLine($"Greška: {ex.Message}");
+                    Console.WriteLine($"Greška prilikom prijema događaja: {ex.Message}");
                     break;
                 }
             }
-            #endregion
 
-            #region Obrada statistike
+            Console.WriteLine("Prijem događaja završen.");
+            ObradiStatistiku(dogadjaji);
+        }
+
+        static void ObradiStatistiku(List<Dogadjaj> dogadjaji)
+        {
             double ukupnoVreme = 0;
             double minimalnoVreme = double.MaxValue;
             int tacniOdgovori = 0;
@@ -108,13 +134,6 @@ namespace TCPServer
             Console.WriteLine($"Tačnost: {tacnost:F2}%");
             Console.WriteLine($"Stopa lažnih pozitiva: {lazniPozitivi}");
             Console.WriteLine($"Stopa lažnih negativa: {lazniNegativi}");
-            #endregion
-
-            #region Zatvaranje
-            Console.WriteLine("Server završava sa radom.");
-            acceptedSocket.Close();
-            serverSocket.Close();
-            #endregion
         }
     }
 }
