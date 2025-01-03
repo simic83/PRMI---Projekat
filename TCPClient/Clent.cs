@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Diagnostics;
-using System.Threading;
 using ClassLibrary;
 
 namespace TCPClient
@@ -60,27 +59,30 @@ namespace TCPClient
             }
             #endregion
 
-            #region Prijem trajanja eksperimenta
+            #region Prijem trajanja eksperimenta (Polling model)
             byte[] trajanjeData = new byte[4];
-            try
-            {
-                int received = clientSocket.Receive(trajanjeData);
-                if (received > 0)
-                {
-                    int trajanjeEksperimenta = BitConverter.ToInt32(trajanjeData, 0);
-                    Console.WriteLine($"Trajanje eksperimenta primljeno: {trajanjeEksperimenta} sekundi");
+            bool trajanjePrimljeno = false;
 
-                    // Pokretanje simulacije
-                    SimulacijaEksperimenta(clientSocket, formatter, trajanjeEksperimenta);
+            while (!trajanjePrimljeno)
+            {
+                // Proveravamo da li su podaci spremni za čitanje
+                if (clientSocket.Poll(1000000, SelectMode.SelectRead)) // Čekanje do 1 sekunde
+                {
+                    int received = clientSocket.Receive(trajanjeData);
+                    if (received > 0)
+                    {
+                        int trajanjeEksperimenta = BitConverter.ToInt32(trajanjeData, 0);
+                        Console.WriteLine($"Trajanje eksperimenta primljeno: {trajanjeEksperimenta} sekundi");
+
+                        // Pokretanje simulacije
+                        SimulacijaEksperimenta(clientSocket, formatter, trajanjeEksperimenta);
+                        trajanjePrimljeno = true;
+                    }
                 }
                 else
                 {
-                    Console.WriteLine("Server nije poslao trajanje eksperimenta. Veza se zatvara.");
+                    Console.WriteLine("Čekam da server pošalje trajanje eksperimenta...");
                 }
-            }
-            catch (SocketException ex)
-            {
-                Console.WriteLine($"Greška prilikom prijema trajanja: {ex.Message}");
             }
             #endregion
 
