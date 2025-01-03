@@ -29,8 +29,6 @@ namespace TCPClient
             }
             #endregion
 
-            BinaryFormatter formatter = new BinaryFormatter();
-
             #region Login ispitanika
             Console.WriteLine("Unesite podatke o ispitaniku:");
             Console.Write("Ime: ");
@@ -50,6 +48,7 @@ namespace TCPClient
                 Starost = starost
             };
 
+            BinaryFormatter formatter = new BinaryFormatter();
             using (MemoryStream ms = new MemoryStream())
             {
                 formatter.Serialize(ms, ispitanik);

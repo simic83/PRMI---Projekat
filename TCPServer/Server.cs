@@ -4,98 +4,146 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Serialization.Formatters.Binary;
+using System.Text;
+using System.Threading.Tasks;
 using ClassLibrary;
 
 namespace TCPServer
 {
     internal class Server
     {
+        static List<string> povezaniKlijenti = new List<string>();
+        static int brojKorisnika = 0;
+        static int trajanjeEksperimenta = 0;
+        static object locker = new object();
+        static int trenutniKorisnici = 0;
+
         static void Main(string[] args)
         {
-            #region Povezivanje
-            Socket serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            IPEndPoint serverEP = new IPEndPoint(IPAddress.Any, 50001);
-            serverSocket.Bind(serverEP);
-            serverSocket.Listen(1);
-
-            Console.WriteLine($"Server je spreman na {serverEP}");
-            Socket clientSocket = serverSocket.Accept();
-            Console.WriteLine($"Povezan klijent: {clientSocket.RemoteEndPoint}");
+            #region Postavljanje broja korisnika
+            Console.Write("Koliko korisnika radi eksperiment? ");
+            brojKorisnika = int.Parse(Console.ReadLine());
+            Console.Clear();
+            Console.WriteLine($"Očekujemo povezivanje {brojKorisnika} korisnika...");
             #endregion
 
-            BinaryFormatter formatter = new BinaryFormatter();
-            List<Dogadjaj> dogadjaji = new List<Dogadjaj>();
+            #region Povezivanje
+            Socket serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            serverSocket.Bind(new IPEndPoint(IPAddress.Any, 50001));
+            serverSocket.Listen(10);
+            serverSocket.Blocking = false; // Postavljanje u neblokirajući režim
 
-            #region Prijem podataka o ispitaniku
+            Console.WriteLine($"Server je spreman na {serverSocket.LocalEndPoint} i čeka klijente...");
+
+            List<Socket> klijenti = new List<Socket>();
+
+            while (trenutniKorisnici < brojKorisnika)
+            {
+                if (serverSocket.Poll(2000 * 1000, SelectMode.SelectRead)) // Polling sa timeout-om od 2 sekunde
+                {
+                    Socket clientSocket = serverSocket.Accept();
+                    klijenti.Add(clientSocket);
+                    trenutniKorisnici++;
+
+                    string klijentInfo = clientSocket.RemoteEndPoint.ToString();
+                    povezaniKlijenti.Add($"Povezan klijent: {klijentInfo}");
+
+                    Console.WriteLine($"Povezan klijent: {klijentInfo}");
+                }
+                else
+                {
+                    Console.WriteLine("Čekam nove klijente...");
+                }
+            }
+
+            Console.Write("Unesite trajanje eksperimenta (u sekundama): ");
+            trajanjeEksperimenta = int.Parse(Console.ReadLine());
+            byte[] trajanjeData = BitConverter.GetBytes(trajanjeEksperimenta);
+
+            foreach (var klijent in klijenti)
+            {
+                klijent.Send(trajanjeData);
+                Console.WriteLine($"Trajanje eksperimenata poslato klijentu {klijent.RemoteEndPoint}");
+            }
+            #endregion
+
+            #region Prikupljanje događaja
+            List<Task> klijentskeNiti = new List<Task>();
+
+            foreach (var klijent in klijenti)
+            {
+                klijentskeNiti.Add(Task.Run(() => ObradiKlijenta(klijent)));
+            }
+
+            Task.WaitAll(klijentskeNiti.ToArray());
+            #endregion
+        }
+
+        static void ObradiKlijenta(Socket clientSocket)
+        {
+            BinaryFormatter formatter = new BinaryFormatter();
+            string imeKlijenta = "";
+            List<Dogadjaj> dogadjajiKlijenta = new List<Dogadjaj>();
+
             try
             {
-                byte[] buffer = new byte[1024];
-                clientSocket.Receive(buffer);
+                bool ispitanikPrimljen = false;
 
-                using (MemoryStream ms = new MemoryStream(buffer))
+                while (true)
                 {
-                    Ispitanik ispitanik = (Ispitanik)formatter.Deserialize(ms);
-                    Console.WriteLine($"Ispitanik prijavljen: {ispitanik.Ime} {ispitanik.Prezime}");
+                    if (clientSocket == null || !clientSocket.Connected) break;
+
+                    if (clientSocket.Poll(1500 * 1000, SelectMode.SelectRead))
+                    {
+                        byte[] buffer = new byte[1024];
+                        int bytesRead = clientSocket.Receive(buffer);
+
+                        if (bytesRead == 0) break;
+
+                        using (MemoryStream ms = new MemoryStream(buffer))
+                        {
+                            object primljeniObjekat = formatter.Deserialize(ms);
+
+                            if (!ispitanikPrimljen && primljeniObjekat is Ispitanik ispitanik)
+                            {
+                                imeKlijenta = $"{ispitanik.Ime} {ispitanik.Prezime}";
+                                Console.WriteLine($"[{imeKlijenta}] Podaci o ispitaniku primljeni.");
+                                ispitanikPrimljen = true;
+                            }
+                            else if (primljeniObjekat is Dogadjaj dogadjaj)
+                            {
+                                dogadjajiKlijenta.Add(dogadjaj);
+
+                                Console.WriteLine($"\n[{imeKlijenta}] Primljen događaj: {dogadjaj.PrikazaniSimbol}, " +
+                                                  $"Reakcija: {dogadjaj.PritisnutiSimbol}, " +
+                                                  $"Vreme: {dogadjaj.ReakcionoVreme:F2}s, " +
+                                                  $"Tačnost: {dogadjaj.Tacnost}");
+
+                                PrikaziStatistiku(imeKlijenta, dogadjajiKlijenta);
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[{imeKlijenta}] Primljen nepoznat objekat.");
+                            }
+                        }
+                    }
                 }
-
-                // Slanje trajanja eksperimenta
-                Console.Write("Unesite trajanje eksperimenta (u sekundama): ");
-                int trajanjeEksperimenta = int.Parse(Console.ReadLine());
-                byte[] trajanjeData = BitConverter.GetBytes(trajanjeEksperimenta);
-                clientSocket.Send(trajanjeData);
-                Console.WriteLine("Trajanje eksperimenta poslato klijentu.");
-
-                // Početak prikupljanja događaja
-                Console.WriteLine("Čekanje podataka o događajima...");
-                PrimiDogadjaje(clientSocket, formatter, dogadjaji);
             }
             catch (SocketException ex)
             {
-                Console.WriteLine($"Greška: {ex.Message}");
-                clientSocket.Close();
+                Console.WriteLine($"Greška sa klijentom {clientSocket.RemoteEndPoint}: {ex.Message}");
             }
-            #endregion
-
-            #region Zatvaranje
-            Console.WriteLine("Server završava sa radom.");
-            clientSocket.Close();
-            serverSocket.Close();
-            #endregion
-        }
-
-        static void PrimiDogadjaje(Socket clientSocket, BinaryFormatter formatter, List<Dogadjaj> dogadjaji)
-        {
-            while (true)
+            finally
             {
-                try
+                if (clientSocket != null && clientSocket.Connected)
                 {
-                    byte[] buffer = new byte[1024];
-                    int receivedBytes = clientSocket.Receive(buffer);
-                    if (receivedBytes == 0) break; // Klijent zatvorio vezu
-
-                    using (MemoryStream ms = new MemoryStream(buffer))
-                    {
-                        Dogadjaj dogadjaj = (Dogadjaj)formatter.Deserialize(ms);
-                        dogadjaji.Add(dogadjaj);
-
-                        Console.WriteLine($"Primljen događaj: {dogadjaj.PrikazaniSimbol}, " +
-                                          $"Reakcija: {dogadjaj.PritisnutiSimbol}, " +
-                                          $"Reakciono vreme: {dogadjaj.ReakcionoVreme:F2} sekunde, " +
-                                          $"Tačnost: {dogadjaj.Tacnost}");
-                    }
+                    clientSocket.Close();
                 }
-                catch (SocketException ex)
-                {
-                    Console.WriteLine($"Greška prilikom prijema događaja: {ex.Message}");
-                    break;
-                }
+                Console.WriteLine($"Klijent {imeKlijenta} završio vezu.");
             }
-
-            Console.WriteLine("Prijem događaja završen.");
-            ObradiStatistiku(dogadjaji);
         }
 
-        static void ObradiStatistiku(List<Dogadjaj> dogadjaji)
+        static void PrikaziStatistiku(string imeKlijenta, List<Dogadjaj> dogadjaji)
         {
             double ukupnoVreme = 0;
             double minimalnoVreme = double.MaxValue;
@@ -128,12 +176,7 @@ namespace TCPServer
             double prosecnoVreme = ukupnoVreme / dogadjaji.Count;
             double tacnost = (double)tacniOdgovori / dogadjaji.Count * 100;
 
-            Console.WriteLine("\nRezultati:");
-            Console.WriteLine($"Prosečno reakciono vreme: {prosecnoVreme:F2} sekunde");
-            Console.WriteLine($"Minimalno reakciono vreme: {minimalnoVreme:F2} sekunde");
-            Console.WriteLine($"Tačnost: {tacnost:F2}%");
-            Console.WriteLine($"Stopa lažnih pozitiva: {lazniPozitivi}");
-            Console.WriteLine($"Stopa lažnih negativa: {lazniNegativi}");
+            Console.WriteLine($"[{imeKlijenta}] Statistika: Prosek: {prosecnoVreme:F2}s, Min: {minimalnoVreme:F2}s, Tacnost: {tacnost:F1}%, LP: {lazniPozitivi}, LN: {lazniNegativi}");
         }
     }
 }
