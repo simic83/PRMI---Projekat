@@ -74,8 +74,11 @@ namespace TCPServer
             #endregion
 
             #region Generisanje izveštaja
+            Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("\nSvi klijenti su završili eksperiment.");
-            GenerisiIzvestaj(sviDogadjaji);
+            Console.ResetColor();
+            GenerisiIzvestaj(sviDogadjaji); // Generisanje izveštaja u konzoli
+            GenerisiCSV(sviDogadjaji, "izvestaj.csv"); // Generisanje CSV fajla
             #endregion
         }
 
@@ -84,6 +87,7 @@ namespace TCPServer
             BinaryFormatter formatter = new BinaryFormatter();
             string imeKlijenta = "";
             List<Dogadjaj> dogadjajiKlijenta = new List<Dogadjaj>();
+            DateTime vremePocetka = DateTime.Now;
 
             try
             {
@@ -107,7 +111,7 @@ namespace TCPServer
                             if (!ispitanikPrimljen && primljeniObjekat is Ispitanik ispitanik)
                             {
                                 imeKlijenta = $"{ispitanik.Ime} {ispitanik.Prezime}";
-                                Console.WriteLine($"[{imeKlijenta}] Podaci o ispitaniku primljeni.");
+                                Console.WriteLine($"[{imeKlijenta}] Podaci o ispitaniku primljeni. Eksperiment započet: {vremePocetka:G}");
                                 ispitanikPrimljen = true;
 
                                 lock (sviDogadjaji)
@@ -145,11 +149,12 @@ namespace TCPServer
             }
             finally
             {
+                DateTime vremeZavrsetka = DateTime.Now;
+                Console.WriteLine($"[{imeKlijenta}] Eksperiment završen: {vremeZavrsetka:G}");
                 if (clientSocket != null && clientSocket.Connected)
                 {
                     clientSocket.Close();
                 }
-                Console.WriteLine($"Klijent {imeKlijenta} završio vezu.");
             }
         }
 
@@ -194,12 +199,12 @@ namespace TCPServer
 
         static void GenerisiIzvestaj(Dictionary<string, List<Dogadjaj>> sviDogadjaji)
         {
-            Console.WriteLine("\nIzveštaj o rezultatima:");
+            Console.WriteLine("\nIzvestaj o rezultatima:");
 
             // Prikaz zaglavlja tabele
             Console.WriteLine("-------------------------------------------------------------");
             Console.WriteLine("{0,-20}{1,-12}{2,-10}{3,-12}{4,-5}{5,-5}",
-                "Ispitanik", "Prosek (s)", "Min (s)", "Tačnost (%)", "LP", "LN");
+                "Ispitanik", "Prosek (s)", "Min (s)", "Tacnost (%)", "LP", "LN");
             Console.WriteLine("-------------------------------------------------------------");
 
             var sortirano = sviDogadjaji
@@ -249,8 +254,8 @@ namespace TCPServer
                         LN = lazniNegativi
                     };
                 })
-                .OrderByDescending(x => x.Tacnost) // Sortiramo po tačnosti
-                .ThenBy(x => x.Prosek) // Ako je tačnost ista, sortiramo po prosečnom vremenu
+                .OrderByDescending(x => x.Tacnost) // Sortiramo po tacnosti
+                .ThenBy(x => x.Prosek) // Ako je tacnost ista, sortiramo po prosecnom vremenu
                 .ToList();
 
             foreach (var rezultat in sortirano)
@@ -262,5 +267,58 @@ namespace TCPServer
             Console.WriteLine("-------------------------------------------------------------");
         }
 
+        static void GenerisiCSV(Dictionary<string, List<Dogadjaj>> sviDogadjaji, string putanja)
+        {
+            try
+            {
+                using (StreamWriter sw = new StreamWriter(putanja))
+                {
+                    sw.WriteLine("Ime i Prezime,Prosecno Vreme (s),Tacnost (%),Lazni Pozitivi,Lazni Negativi");
+
+                    foreach (var par in sviDogadjaji)
+                    {
+                        string imeKlijenta = par.Key;
+                        List<Dogadjaj> dogadjaji = par.Value;
+
+                        double ukupnoVreme = 0;
+                        int tacniOdgovori = 0;
+                        int lazniPozitivi = 0;
+                        int lazniNegativi = 0;
+
+                        foreach (var dogadjaj in dogadjaji)
+                        {
+                            ukupnoVreme += dogadjaj.ReakcionoVreme;
+
+                            if (dogadjaj.Tacnost)
+                            {
+                                tacniOdgovori++;
+                            }
+                            else if (dogadjaj.PrikazaniSimbol == "X" && dogadjaj.PritisnutiSimbol == "O")
+                            {
+                                lazniPozitivi++;
+                            }
+                            else if (dogadjaj.PrikazaniSimbol == "O" && dogadjaj.PritisnutiSimbol == "Ignorisano")
+                            {
+                                lazniNegativi++;
+                            }
+                        }
+
+                        double prosecnoVreme = ukupnoVreme / dogadjaji.Count;
+                        double tacnost = (double)tacniOdgovori / dogadjaji.Count * 100;
+
+                        sw.WriteLine($"{imeKlijenta},{prosecnoVreme:F2},{tacnost:F1},{lazniPozitivi},{lazniNegativi}");
+                    }
+                }
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\nIzvestaj generisan u fajlu: {Path.GetFullPath(putanja)}\n");
+                Console.ResetColor();
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"Greska prilikom generisanja CSV fajla: {ex.Message}");
+                Console.ResetColor();
+            }
+        }
     }
 }
