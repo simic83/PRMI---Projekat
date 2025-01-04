@@ -105,7 +105,7 @@ namespace TCPClient
                 string pritisnutiSimbol = "Ignorisano";
                 bool tacno = (simbol == "X");
 
-                while (stopwatch.ElapsedMilliseconds < 2000)
+                while (stopwatch.ElapsedMilliseconds < 1000)
                 {
                     if (Console.KeyAvailable)
                     {
