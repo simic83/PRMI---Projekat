@@ -4,41 +4,69 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Diagnostics;
+using System.Threading;
 using ClassLibrary;
 
 namespace TCPClient
 {
     internal class Client
     {
+        private static readonly string[] LoadingChars = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+        private static int loadingIndex = 0;
+
         static void Main(string[] args)
         {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.Title = "🧠 Psihološki Eksperiment - Klijent";
+
+            ShowWelcomeScreen();
+
             #region Povezivanje
             Socket clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-
             IPEndPoint serverEP = new IPEndPoint(IPAddress.Loopback, 50001);
+
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("\n⏳ Povezivanje na server");
 
             try
             {
-                clientSocket.Connect(serverEP);
-                Console.WriteLine("Klijent je povezan na server!");
+                // Animacija tokom povezivanja
+                var connectTask = System.Threading.Tasks.Task.Run(() => clientSocket.Connect(serverEP));
+                while (!connectTask.IsCompleted)
+                {
+                    Console.Write($"\r⏳ Povezivanje na server {LoadingChars[loadingIndex++ % LoadingChars.Length]}");
+                    Thread.Sleep(100);
+                }
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("\r✅ Uspešno povezano na server!                    ");
+                Console.ResetColor();
+
+                Thread.Sleep(500);
             }
             catch (SocketException ex)
             {
-                Console.WriteLine($"Greška prilikom povezivanja: {ex.Message}");
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"\r❌ Greška prilikom povezivanja: {ex.Message}");
+                Console.ResetColor();
+                Console.WriteLine("\nPritisnite bilo koji taster za izlaz...");
+                Console.ReadKey();
                 return;
             }
             #endregion
 
             #region Login ispitanika
-            Console.WriteLine("Unesite podatke o ispitaniku:");
-            Console.Write("Ime: ");
-            string ime = Console.ReadLine();
-            Console.Write("Prezime: ");
-            string prezime = Console.ReadLine();
-            Console.Write("ID: ");
-            string id = Console.ReadLine();
-            Console.Write("Starost: ");
-            int starost = int.Parse(Console.ReadLine());
+            Console.Clear();
+            ShowHeader("REGISTRACIJA ISPITANIKA");
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("📋 Molimo unesite podatke o ispitaniku:\n");
+            Console.ResetColor();
+
+            string ime = GetInput("👤 Ime", ConsoleColor.White);
+            string prezime = GetInput("👤 Prezime", ConsoleColor.White);
+            string id = GetInput("🆔 ID", ConsoleColor.White);
+            int starost = GetIntInput("🎂 Starost", ConsoleColor.White);
 
             Ispitanik ispitanik = new Ispitanik
             {
@@ -48,13 +76,26 @@ namespace TCPClient
                 Starost = starost
             };
 
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("\n📤 Slanje podataka serveru");
+
             BinaryFormatter formatter = new BinaryFormatter();
             using (MemoryStream ms = new MemoryStream())
             {
                 formatter.Serialize(ms, ispitanik);
                 byte[] data = ms.ToArray();
+
+                // Animacija slanja
+                for (int i = 0; i < 5; i++)
+                {
+                    Console.Write(".");
+                    Thread.Sleep(200);
+                }
+
                 clientSocket.Send(data);
-                Console.WriteLine("Podaci o ispitaniku su poslati serveru.");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine(" ✅ Uspešno!");
+                Console.ResetColor();
             }
             #endregion
 
@@ -62,16 +103,22 @@ namespace TCPClient
             byte[] trajanjeData = new byte[4];
             bool trajanjePrimljeno = false;
 
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("\n⏱️  Čekanje na instrukcije");
+
             while (!trajanjePrimljeno)
             {
-                // Proveravamo da li su podaci spremni za čitanje
-                if (clientSocket.Poll(1000000, SelectMode.SelectRead)) // Čekanje do 1 sekunde
+                if (clientSocket.Poll(1000000, SelectMode.SelectRead))
                 {
                     int received = clientSocket.Receive(trajanjeData);
                     if (received > 0)
                     {
                         int trajanjeEksperimenta = BitConverter.ToInt32(trajanjeData, 0);
-                        Console.WriteLine($"Trajanje eksperimenta primljeno: {trajanjeEksperimenta} sekundi");
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine($"\r⏱️  Trajanje eksperimenta: {trajanjeEksperimenta} sekundi ✅");
+                        Console.ResetColor();
+
+                        Thread.Sleep(1000);
 
                         // Pokretanje simulacije
                         SimulacijaEksperimenta(clientSocket, formatter, trajanjeEksperimenta);
@@ -80,26 +127,70 @@ namespace TCPClient
                 }
                 else
                 {
-                    Console.WriteLine("Čekam da server pošalje trajanje eksperimenta...");
+                    Console.Write($"\r⏱️  Čekanje na instrukcije {LoadingChars[loadingIndex++ % LoadingChars.Length]}");
                 }
             }
             #endregion
 
             #region Zatvaranje
-            Console.WriteLine("Klijent završava sa radom.");
+            Console.Clear();
+            ShowHeader("EKSPERIMENT ZAVRŠEN");
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("✅ Hvala na učešću!\n");
+            Console.ResetColor();
+
+            Console.WriteLine("📊 Vaši rezultati su uspešno sačuvani.");
+            Console.WriteLine("📧 Rezultate ćete dobiti na email adresu.\n");
+
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("Pritisnite bilo koji taster za izlaz...");
+            Console.ResetColor();
+            Console.ReadKey();
+
             clientSocket.Close();
             #endregion
         }
 
         static void SimulacijaEksperimenta(Socket clientSocket, BinaryFormatter formatter, int trajanjeEksperimenta)
         {
+            Console.Clear();
+            ShowHeader("EKSPERIMENT U TOKU");
+
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("⚡ INSTRUKCIJE:");
+            Console.ResetColor();
+            Console.WriteLine("• Pritisnite SPACE kada vidite simbol 'O'");
+            Console.WriteLine("• Ignorišite simbol 'X'\n");
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("Pritisnite bilo koji taster kada ste spremni...");
+            Console.ResetColor();
+            Console.ReadKey(true);
+
             Random random = new Random();
             Stopwatch ukupanTajmer = Stopwatch.StartNew();
+            int brojPokusaja = 0;
+            int tacniOdgovori = 0;
 
             while (ukupanTajmer.Elapsed.TotalSeconds < trajanjeEksperimenta)
             {
+                brojPokusaja++;
+                Console.Clear();
+
+                // Progress bar
+                double progress = (ukupanTajmer.Elapsed.TotalSeconds / trajanjeEksperimenta) * 100;
+                DrawProgressBar(progress, trajanjeEksperimenta - (int)ukupanTajmer.Elapsed.TotalSeconds);
+
+                // Statistika
+                Console.WriteLine($"\n📊 Pokušaj: {brojPokusaja} | ✅ Tačni: {tacniOdgovori} | 📈 Tačnost: {(brojPokusaja > 0 ? (tacniOdgovori * 100.0 / brojPokusaja) : 0):F1}%\n");
+
+                // Prikaz simbola
                 string simbol = random.Next(2) == 0 ? "X" : "O";
-                Console.WriteLine($"Prikazan simbol: {simbol}");
+                Console.ForegroundColor = simbol == "X" ? ConsoleColor.Red : ConsoleColor.Green;
+                Console.WriteLine("\n\n");
+                DrawLargeSymbol(simbol);
+                Console.ResetColor();
 
                 Stopwatch stopwatch = Stopwatch.StartNew();
                 string pritisnutiSimbol = "Ignorisano";
@@ -121,6 +212,13 @@ namespace TCPClient
 
                 stopwatch.Stop();
 
+                if (tacno) tacniOdgovori++;
+
+                // Prikaz rezultata
+                Console.ForegroundColor = tacno ? ConsoleColor.Green : ConsoleColor.Red;
+                Console.WriteLine($"\n{(tacno ? "✅ TAČNO" : "❌ NETAČNO")} - Reakciono vreme: {stopwatch.Elapsed.TotalMilliseconds:F0}ms");
+                Console.ResetColor();
+
                 Dogadjaj dogadjaj = new Dogadjaj
                 {
                     PrikazaniSimbol = simbol,
@@ -134,11 +232,126 @@ namespace TCPClient
                     formatter.Serialize(ms, dogadjaj);
                     byte[] data = ms.ToArray();
                     clientSocket.Send(data);
-                    Console.WriteLine($"Reakcija poslata: {dogadjaj.PritisnutiSimbol}, Tačnost: {dogadjaj.Tacnost}");
                 }
+
+                Thread.Sleep(500);
+            }
+        }
+
+        static void ShowWelcomeScreen()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine(@"
+    ╔══════════════════════════════════════════════════════════╗
+    ║                                                          ║
+    ║           🧠 PSIHOLOŠKI EKSPERIMENT 🧠                  ║
+    ║                                                          ║
+    ║              Test Reakcionog Vremena                     ║
+    ║                                                          ║
+    ╚══════════════════════════════════════════════════════════╝
+            ");
+            Console.ResetColor();
+
+            Console.WriteLine("    Dobrodošli u eksperiment testiranja reakcionog vremena!");
+            Console.WriteLine("    Cilj: Merenje brzine i tačnosti vaših reakcija.\n");
+
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("    Pritisnite bilo koji taster za početak...");
+            Console.ResetColor();
+            Console.ReadKey();
+        }
+
+        static void ShowHeader(string title)
+        {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"\n    ╔══════════════════════════════════════════╗");
+            Console.WriteLine($"    ║  {title.PadRight(38)} ║");
+            Console.WriteLine($"    ╚══════════════════════════════════════════╝\n");
+            Console.ResetColor();
+        }
+
+        static string GetInput(string prompt, ConsoleColor color)
+        {
+            Console.ForegroundColor = color;
+            Console.Write($"    {prompt}: ");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            string input = Console.ReadLine();
+            Console.ResetColor();
+            return input;
+        }
+
+        static int GetIntInput(string prompt, ConsoleColor color)
+        {
+            while (true)
+            {
+                Console.ForegroundColor = color;
+                Console.Write($"    {prompt}: ");
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                string input = Console.ReadLine();
+                Console.ResetColor();
+
+                if (int.TryParse(input, out int result))
+                    return result;
+
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("    ❌ Molimo unesite validan broj!");
+                Console.ResetColor();
+            }
+        }
+
+        static void DrawProgressBar(double progress, int remainingSeconds)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write("    Napredak: [");
+
+            int barWidth = 40;
+            int filled = (int)(barWidth * progress / 100);
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write(new string('█', filled));
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write(new string('░', barWidth - filled));
+
+            Console.Write($"] {progress:F1}% | ⏱️  Preostalo: {remainingSeconds}s");
+            Console.ResetColor();
+        }
+
+        static void DrawLargeSymbol(string symbol)
+        {
+            Console.WriteLine("\n\n\n\n\n");
+
+            if (symbol == "X")
+            {
+                // Crveni X - ne pritiskaj
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("                    ╔════════════════════╗");
+                Console.WriteLine("                    ║                    ║");
+                Console.WriteLine("                    ║        ❌          ║");
+                Console.WriteLine("                    ║                    ║");
+                Console.WriteLine("                    ║         X          ║");
+                Console.WriteLine("                    ║                    ║");
+                Console.WriteLine("                    ║   NE PRITISKAJ!    ║");
+                Console.WriteLine("                    ║                    ║");
+                Console.WriteLine("                    ╚════════════════════╝");
+            }
+            else
+            {
+                // Zeleni O - pritisni SPACE
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("                    ╔════════════════════╗");
+                Console.WriteLine("                    ║                    ║");
+                Console.WriteLine("                    ║        ⭕          ║");
+                Console.WriteLine("                    ║                    ║");
+                Console.WriteLine("                    ║         O          ║");
+                Console.WriteLine("                    ║                    ║");
+                Console.WriteLine("                    ║  PRITISNI SPACE!   ║");
+                Console.WriteLine("                    ║                    ║");
+                Console.WriteLine("                    ╚════════════════════╝");
             }
 
-            Console.WriteLine("Eksperiment završen.");
+            Console.ResetColor();
+            Console.WriteLine("\n\n\n");
         }
     }
 }

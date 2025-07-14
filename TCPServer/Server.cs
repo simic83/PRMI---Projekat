@@ -6,6 +6,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Threading.Tasks;
+using System.Threading;
+using System.Diagnostics;
 using ClassLibrary;
 
 namespace TCPServer
@@ -13,26 +15,54 @@ namespace TCPServer
     internal class Server
     {
         static Dictionary<string, List<Dogadjaj>> sviDogadjaji = new Dictionary<string, List<Dogadjaj>>();
+        static Dictionary<string, DateTime> vremenaPocetka = new Dictionary<string, DateTime>();
         static int brojKorisnika = 0;
         static int trajanjeEksperimenta = 0;
         static int trenutniKorisnici = 0;
+        static readonly object lockObj = new object();
 
         static void Main(string[] args)
         {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.Title = "🧠 Psihološki Eksperiment - Server";
+
+            ShowServerBanner();
+
             #region Postavljanje broja korisnika
-            Console.Write("Koliko korisnika radi eksperiment? ");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write("👥 Koliko korisnika će raditi eksperiment? ");
+            Console.ForegroundColor = ConsoleColor.Yellow;
             brojKorisnika = int.Parse(Console.ReadLine());
+            Console.ResetColor();
+
+            // Pitanje za automatsko pokretanje
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            Console.Write("\n🤖 Želite li automatski pokrenuti klijente? (D/N): ");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            string autoStart = Console.ReadLine().ToUpper();
+            Console.ResetColor();
+
+            if (autoStart == "D")
+            {
+                PokreniKlijente(brojKorisnika);
+            }
+
             Console.Clear();
-            Console.WriteLine($"Očekujemo povezivanje {brojKorisnika} korisnika...");
+            ShowServerStatus();
             #endregion
 
             #region Povezivanje
             Socket serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             serverSocket.Bind(new IPEndPoint(IPAddress.Any, 50001));
             serverSocket.Listen(10);
-            Console.WriteLine($"Server je spreman na {serverSocket.LocalEndPoint} i čeka klijente...");
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"✅ Server aktivan na {serverSocket.LocalEndPoint}");
+            Console.ResetColor();
+            Console.WriteLine($"\n⏳ Čekam povezivanje {brojKorisnika} korisnika...\n");
 
             List<Socket> klijenti = new List<Socket>();
+            var progressTask = Task.Run(() => ShowConnectionProgress());
 
             while (trenutniKorisnici < brojKorisnika)
             {
@@ -43,26 +73,52 @@ namespace TCPServer
                     trenutniKorisnici++;
 
                     string klijentInfo = clientSocket.RemoteEndPoint.ToString();
-                    Console.WriteLine($"Povezan klijent: {klijentInfo}");
-                }
-                else
-                {
-                    Console.WriteLine("Čekam nove klijente...");
+                    lock (lockObj)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine($"\r✅ Klijent #{trenutniKorisnici} povezan: {klijentInfo}");
+                        Console.ResetColor();
+
+                        // Progress bar za povezivanje
+                        DrawConnectionProgress(trenutniKorisnici, brojKorisnika);
+                    }
                 }
             }
 
-            Console.Write("Unesite trajanje eksperimenta (u sekundama): ");
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("\n🎉 Svi klijenti su povezani!\n");
+            Console.ResetColor();
+
+            Thread.Sleep(1000);
+            Console.Clear();
+            ShowExperimentSetup();
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write("⏱️  Unesite trajanje eksperimenta (u sekundama): ");
+            Console.ForegroundColor = ConsoleColor.Yellow;
             trajanjeEksperimenta = int.Parse(Console.ReadLine());
+            Console.ResetColor();
+
             byte[] trajanjeData = BitConverter.GetBytes(trajanjeEksperimenta);
+
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("\n📤 Slanje instrukcija klijentima...");
+            Console.ResetColor();
 
             foreach (var klijent in klijenti)
             {
                 klijent.Send(trajanjeData);
-                Console.WriteLine($"Trajanje eksperimenata poslato klijentu {klijent.RemoteEndPoint}");
+                Console.ForegroundColor = ConsoleColor.DarkGreen;
+                Console.WriteLine($"   ✓ Instrukcije poslate klijentu {klijent.RemoteEndPoint}");
+                Console.ResetColor();
+                Thread.Sleep(100);
             }
             #endregion
 
             #region Prikupljanje događaja
+            Console.Clear();
+            ShowExperimentRunning();
+
             List<Task> klijentskeNiti = new List<Task>();
 
             foreach (var klijent in klijenti)
@@ -70,16 +126,76 @@ namespace TCPServer
                 klijentskeNiti.Add(Task.Run(() => ObradiKlijenta(klijent)));
             }
 
+            // Prikaz statusa tokom eksperimenta
+            var statusTask = Task.Run(() => ShowExperimentStatus());
+
             Task.WaitAll(klijentskeNiti.ToArray());
             #endregion
 
             #region Generisanje izveštaja
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("\nSvi klijenti su završili eksperiment.");
+            Console.Clear();
+            ShowFinalResults();
+
+            GenerisiIzvestaj(sviDogadjaji);
+            GenerisiCSV(sviDogadjaji, "izvestaj.csv");
+
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("\nPritisnite bilo koji taster za izlaz...");
             Console.ResetColor();
-            GenerisiIzvestaj(sviDogadjaji); // Generisanje izveštaja u konzoli
-            GenerisiCSV(sviDogadjaji, "izvestaj.csv"); // Generisanje CSV fajla
+            Console.ReadKey();
             #endregion
+        }
+
+        static void PokreniKlijente(int brojKlijenata)
+        {
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            Console.WriteLine("\n🚀 Pokretanje klijenata...\n");
+            Console.ResetColor();
+
+            // Relativna putanja u odnosu na folder gde je TCPServer.exe
+            string baseDir = AppContext.BaseDirectory;
+            string clientPath = Path.Combine(baseDir, @"..\..\..\TCPClient\bin\Debug\TCPClient.exe");
+            clientPath = Path.GetFullPath(clientPath); // Normalizacija putanje
+
+            if (!File.Exists(clientPath))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"❌ TCPClient.exe nije pronađen u:\n   {clientPath}");
+                Console.WriteLine("   Molimo kompajlirajte TCPClient projekat prvo!");
+                Console.ResetColor();
+                Console.WriteLine("\nPokrenite klijente ručno...");
+                Thread.Sleep(3000);
+                return;
+            }
+
+            for (int i = 0; i < brojKlijenata; i++)
+            {
+                try
+                {
+                    Process klijentProces = new Process();
+                    klijentProces.StartInfo.FileName = clientPath;
+                    klijentProces.StartInfo.UseShellExecute = true;
+                    klijentProces.StartInfo.CreateNoWindow = false;
+                    klijentProces.Start();
+
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"   ✓ Pokrenut klijent #{i + 1}");
+                    Console.ResetColor();
+
+                    Thread.Sleep(500);
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"   ❌ Greška pri pokretanju klijenta #{i + 1}: {ex.Message}");
+                    Console.ResetColor();
+                }
+            }
+
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("\n⏳ Sačekajte da se klijenti povežu...");
+            Console.ResetColor();
+            Thread.Sleep(2000);
         }
 
         static void ObradiKlijenta(Socket clientSocket)
@@ -111,11 +227,17 @@ namespace TCPServer
                             if (!ispitanikPrimljen && primljeniObjekat is Ispitanik ispitanik)
                             {
                                 imeKlijenta = $"{ispitanik.Ime} {ispitanik.Prezime}";
-                                Console.WriteLine($"[{imeKlijenta}] Podaci o ispitaniku primljeni. Eksperiment započet: {vremePocetka:G}");
-                                ispitanikPrimljen = true;
+                                vremePocetka = DateTime.Now;
 
-                                lock (sviDogadjaji)
+                                lock (lockObj)
                                 {
+                                    Console.ForegroundColor = ConsoleColor.Cyan;
+                                    Console.WriteLine($"\n📋 [{imeKlijenta}] Registrovan - ID: {ispitanik.ID}, Starost: {ispitanik.Starost}");
+                                    Console.ResetColor();
+
+                                    vremenaPocetka[imeKlijenta] = vremePocetka;
+                                    ispitanikPrimljen = true;
+
                                     if (!sviDogadjaji.ContainsKey(imeKlijenta))
                                     {
                                         sviDogadjaji[imeKlijenta] = new List<Dogadjaj>();
@@ -126,18 +248,31 @@ namespace TCPServer
                             {
                                 dogadjajiKlijenta.Add(dogadjaj);
 
-                                Console.WriteLine($"\n[{imeKlijenta}] Primljen događaj: {dogadjaj.PrikazaniSimbol}, " +
-                                                  $"Reakcija: {dogadjaj.PritisnutiSimbol}, " +
-                                                  $"Vreme: {dogadjaj.ReakcionoVreme:F2}s, " +
-                                                  $"Tačnost: {dogadjaj.Tacnost}");
-
-                                lock (sviDogadjaji)
+                                lock (lockObj)
                                 {
                                     sviDogadjaji[imeKlijenta].Add(dogadjaj);
-                                }
 
-                                // Prikaz statistike u realnom vremenu
-                                PrikaziStatistiku(imeKlijenta, dogadjajiKlijenta);
+                                    // Real-time prikaz sa bojama
+                                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                                    Console.Write($"[{DateTime.Now:HH:mm:ss}] ");
+                                    Console.ForegroundColor = ConsoleColor.White;
+                                    Console.Write($"{imeKlijenta}: ");
+
+                                    if (dogadjaj.Tacnost)
+                                    {
+                                        Console.ForegroundColor = ConsoleColor.Green;
+                                        Console.Write("✅ TAČNO ");
+                                    }
+                                    else
+                                    {
+                                        Console.ForegroundColor = ConsoleColor.Red;
+                                        Console.Write("❌ NETAČNO ");
+                                    }
+
+                                    Console.ForegroundColor = ConsoleColor.Yellow;
+                                    Console.WriteLine($"({dogadjaj.ReakcionoVreme * 1000:F0}ms)");
+                                    Console.ResetColor();
+                                }
                             }
                         }
                     }
@@ -145,12 +280,23 @@ namespace TCPServer
             }
             catch (SocketException ex)
             {
-                Console.WriteLine($"Greška sa klijentom {clientSocket.RemoteEndPoint}: {ex.Message}");
+                lock (lockObj)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n❌ Greška sa klijentom {imeKlijenta}: {ex.Message}");
+                    Console.ResetColor();
+                }
             }
             finally
             {
                 DateTime vremeZavrsetka = DateTime.Now;
-                Console.WriteLine($"[{imeKlijenta}] Eksperiment završen: {vremeZavrsetka:G}");
+                lock (lockObj)
+                {
+                    Console.ForegroundColor = ConsoleColor.Blue;
+                    Console.WriteLine($"\n🏁 [{imeKlijenta}] Završio eksperiment");
+                    Console.ResetColor();
+                }
+
                 if (clientSocket != null && clientSocket.Connected)
                 {
                     clientSocket.Close();
@@ -158,54 +304,115 @@ namespace TCPServer
             }
         }
 
-        static void PrikaziStatistiku(string imeKlijenta, List<Dogadjaj> dogadjaji)
+        static void ShowServerBanner()
         {
-            double ukupnoVreme = 0;
-            double minimalnoVreme = double.MaxValue;
-            int tacniOdgovori = 0;
-            int lazniPozitivi = 0;
-            int lazniNegativi = 0;
-
-            foreach (var dogadjaj in dogadjaji)
-            {
-                ukupnoVreme += dogadjaj.ReakcionoVreme;
-                if (dogadjaj.ReakcionoVreme < minimalnoVreme)
-                {
-                    minimalnoVreme = dogadjaj.ReakcionoVreme;
-                }
-
-                if (dogadjaj.Tacnost)
-                {
-                    tacniOdgovori++;
-                }
-                else if (dogadjaj.PrikazaniSimbol == "X" && dogadjaj.PritisnutiSimbol == "O")
-                {
-                    lazniPozitivi++;
-                }
-                else if (dogadjaj.PrikazaniSimbol == "O" && dogadjaj.PritisnutiSimbol == "Ignorisano")
-                {
-                    lazniNegativi++;
-                }
-            }
-
-            double prosecnoVreme = ukupnoVreme / dogadjaji.Count;
-            double tacnost = (double)tacniOdgovori / dogadjaji.Count * 100;
-
-            Console.WriteLine($"[{imeKlijenta}] Statistika: Prosek: {prosecnoVreme:F2}s, " +
-                              $"Min: {minimalnoVreme:F2}s, Tacnost: {tacnost:F1}%, " +
-                              $"LP: {lazniPozitivi}, LN: {lazniNegativi}");
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine(@"
+    ╔══════════════════════════════════════════════════════════════╗
+    ║                                                              ║
+    ║              🧠 PSIHOLOŠKI EKSPERIMENT SERVER 🧠            ║
+    ║                                                              ║
+    ║                    Kontrolni Centar                          ║
+    ║                                                              ║
+    ╚══════════════════════════════════════════════════════════════╝
+            ");
+            Console.ResetColor();
         }
 
+        static void ShowServerStatus()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("\n    ╔════════════════════════════╗");
+            Console.WriteLine("    ║     SERVER STATUS: ON      ║");
+            Console.WriteLine("    ╚════════════════════════════╝");
+            Console.ResetColor();
+        }
+
+        static void ShowExperimentSetup()
+        {
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            Console.WriteLine("\n    ╔════════════════════════════╗");
+            Console.WriteLine("    ║   PODEŠAVANJE EKSPERIMENTA ║");
+            Console.WriteLine("    ╚════════════════════════════╝\n");
+            Console.ResetColor();
+        }
+
+        static void ShowExperimentRunning()
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("\n    ╔════════════════════════════╗");
+            Console.WriteLine("    ║   EKSPERIMENT U TOKU 🔴    ║");
+            Console.WriteLine("    ╚════════════════════════════╝\n");
+            Console.ResetColor();
+        }
+
+        static void ShowFinalResults()
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("\n    ╔════════════════════════════╗");
+            Console.WriteLine("    ║    📊 FINALNI REZULTATI    ║");
+            Console.WriteLine("    ╚════════════════════════════╝\n");
+            Console.ResetColor();
+        }
+
+        static void DrawConnectionProgress(int current, int total)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write("\r    Progres: [");
+
+            int barWidth = 30;
+            int filled = (int)(barWidth * current / (double)total);
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write(new string('█', filled));
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write(new string('░', barWidth - filled));
+
+            Console.Write($"] {current}/{total}");
+            Console.ResetColor();
+        }
+
+        static void ShowConnectionProgress()
+        {
+            string[] animation = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+            int i = 0;
+            while (trenutniKorisnici < brojKorisnika)
+            {
+                lock (lockObj)
+                {
+                    Console.SetCursorPosition(0, Console.CursorTop);
+                    Console.Write($"    {animation[i++ % animation.Length]} Čekam klijente...");
+                }
+                Thread.Sleep(100);
+            }
+        }
+
+        static void ShowExperimentStatus()
+        {
+            while (true)
+            {
+                lock (lockObj)
+                {
+                    int aktivniKlijenti = sviDogadjaji.Count(kv => kv.Value.Count > 0);
+                    if (aktivniKlijenti == brojKorisnika) break;
+                }
+                Thread.Sleep(1000);
+            }
+        }
 
         static void GenerisiIzvestaj(Dictionary<string, List<Dogadjaj>> sviDogadjaji)
         {
-            Console.WriteLine("\nIzvestaj o rezultatima:");
+            Console.WriteLine("\n📊 TABELA REZULTATA:");
+            Console.WriteLine("══════════════════════════════════════════════════════════════════════════════");
 
-            // Prikaz zaglavlja tabele
-            Console.WriteLine("-------------------------------------------------------------");
-            Console.WriteLine("{0,-20}{1,-12}{2,-10}{3,-12}{4,-5}{5,-5}",
-                "Ispitanik", "Prosek (s)", "Min (s)", "Tacnost (%)", "LP", "LN");
-            Console.WriteLine("-------------------------------------------------------------");
+            // Zaglavlje sa bojama
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("{0,-20}{1,-12}{2,-10}{3,-12}{4,-8}{5,-8}{6,-10}",
+                "Ispitanik", "Prosek", "Min", "Tačnost", "LP", "LN", "Rang");
+            Console.WriteLine("──────────────────────────────────────────────────────────────────────────────");
+            Console.ResetColor();
 
             var sortirano = sviDogadjaji
                 .Select(kv =>
@@ -254,17 +461,55 @@ namespace TCPServer
                         LN = lazniNegativi
                     };
                 })
-                .OrderByDescending(x => x.Tacnost) // Sortiramo po tacnosti
-                .ThenBy(x => x.Prosek) // Ako je tacnost ista, sortiramo po prosecnom vremenu
+                .OrderByDescending(x => x.Tacnost)
+                .ThenBy(x => x.Prosek)
                 .ToList();
 
+            // Prikaz rezultata sa bojama i rangom
+            int rang = 1;
             foreach (var rezultat in sortirano)
             {
-                Console.WriteLine("{0,-20}{1,-12:F2}{2,-10:F2}{3,-12:F1}{4,-5}{5,-5}",
-                    rezultat.ImeKlijenta, rezultat.Prosek, rezultat.Min, rezultat.Tacnost, rezultat.LP, rezultat.LN);
+                // Boja na osnovu ranga
+                if (rang == 1)
+                    Console.ForegroundColor = ConsoleColor.Yellow; // Zlatna
+                else if (rang == 2)
+                    Console.ForegroundColor = ConsoleColor.Gray; // Srebrna
+                else if (rang == 3)
+                    Console.ForegroundColor = ConsoleColor.DarkYellow; // Bronzana
+                else
+                    Console.ForegroundColor = ConsoleColor.White;
+
+                string medalja = rang == 1 ? "🥇" : rang == 2 ? "🥈" : rang == 3 ? "🥉" : "  ";
+
+                Console.WriteLine("{0,-20}{1,-12:F2}ms{2,-10:F2}ms{3,-12:F1}%{4,-8}{5,-8}{6}",
+                    rezultat.ImeKlijenta,
+                    rezultat.Prosek * 1000,
+                    rezultat.Min * 1000,
+                    rezultat.Tacnost,
+                    rezultat.LP,
+                    rezultat.LN,
+                    medalja);
+
+                rang++;
+                Console.ResetColor();
             }
 
-            Console.WriteLine("-------------------------------------------------------------");
+            Console.WriteLine("══════════════════════════════════════════════════════════════════════════════");
+
+            // Statistički pregled
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            Console.WriteLine("\n📈 STATISTIČKI PREGLED:");
+            Console.ResetColor();
+
+            var prosecnaTacnost = sortirano.Average(x => x.Tacnost);
+            var prosecnoVremeReakcije = sortirano.Average(x => x.Prosek) * 1000;
+            var najbrziIspitanik = sortirano.OrderBy(x => x.Prosek).First();
+            var najtacnijiIspitanik = sortirano.First();
+
+            Console.WriteLine($"   • Prosečna tačnost grupe: {prosecnaTacnost:F1}%");
+            Console.WriteLine($"   • Prosečno vreme reakcije: {prosecnoVremeReakcije:F0}ms");
+            Console.WriteLine($"   • Najtačniji ispitanik: {najtacnijiIspitanik.ImeKlijenta} ({najtacnijiIspitanik.Tacnost:F1}%)");
+            Console.WriteLine($"   • Najbrži ispitanik: {najbrziIspitanik.ImeKlijenta} ({najbrziIspitanik.Prosek * 1000:F0}ms)");
         }
 
         static void GenerisiCSV(Dictionary<string, List<Dogadjaj>> sviDogadjaji, string putanja)
@@ -273,7 +518,7 @@ namespace TCPServer
             {
                 using (StreamWriter sw = new StreamWriter(putanja))
                 {
-                    sw.WriteLine("Ime i Prezime,Prosecno Vreme (s),Tacnost (%),Lazni Pozitivi,Lazni Negativi");
+                    sw.WriteLine("Ime i Prezime,Prosecno Vreme (ms),Minimalno Vreme (ms),Tacnost (%),Lazni Pozitivi,Lazni Negativi,Ukupno Pokusaja");
 
                     foreach (var par in sviDogadjaji)
                     {
@@ -281,6 +526,7 @@ namespace TCPServer
                         List<Dogadjaj> dogadjaji = par.Value;
 
                         double ukupnoVreme = 0;
+                        double minimalnoVreme = double.MaxValue;
                         int tacniOdgovori = 0;
                         int lazniPozitivi = 0;
                         int lazniNegativi = 0;
@@ -288,6 +534,10 @@ namespace TCPServer
                         foreach (var dogadjaj in dogadjaji)
                         {
                             ukupnoVreme += dogadjaj.ReakcionoVreme;
+                            if (dogadjaj.ReakcionoVreme < minimalnoVreme)
+                            {
+                                minimalnoVreme = dogadjaj.ReakcionoVreme;
+                            }
 
                             if (dogadjaj.Tacnost)
                             {
@@ -306,17 +556,27 @@ namespace TCPServer
                         double prosecnoVreme = ukupnoVreme / dogadjaji.Count;
                         double tacnost = (double)tacniOdgovori / dogadjaji.Count * 100;
 
-                        sw.WriteLine($"{imeKlijenta},{prosecnoVreme:F2},{tacnost:F1},{lazniPozitivi},{lazniNegativi}");
+                        sw.WriteLine($"{imeKlijenta},{prosecnoVreme * 1000:F2},{minimalnoVreme * 1000:F2},{tacnost:F1},{lazniPozitivi},{lazniNegativi},{dogadjaji.Count}");
                     }
                 }
+
                 Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"\nIzvestaj generisan u fajlu: {Path.GetFullPath(putanja)}\n");
+                Console.WriteLine($"\n💾 CSV izveštaj uspešno generisan: {Path.GetFullPath(putanja)}");
+                Console.ResetColor();
+
+                // Vizuelni prikaz da je fajl kreiran
+                Console.ForegroundColor = ConsoleColor.DarkGreen;
+                Console.WriteLine(@"
+    ╔══════════════════════════════════╗
+    ║     📄 FAJL USPEŠNO KREIRAN      ║
+    ╚══════════════════════════════════╝
+                ");
                 Console.ResetColor();
             }
             catch (Exception ex)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"Greska prilikom generisanja CSV fajla: {ex.Message}");
+                Console.WriteLine($"\n❌ Greška prilikom generisanja CSV fajla: {ex.Message}");
                 Console.ResetColor();
             }
         }
