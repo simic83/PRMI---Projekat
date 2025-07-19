@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TCPClient", "TCPClient\TCPC
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TCPServer", "TCPServer\TCPServer.csproj", "{6A5632D8-1DBF-47DF-A0B5-5B526A74B8B0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClassLibrary", "ClassLibrary\ClassLibrary.csproj", "{93FB7F9C-0940-439A-96E2-E4810F3D3E83}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Modeli", "ClassLibrary\Modeli.csproj", "{93FB7F9C-0940-439A-96E2-E4810F3D3E83}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -30,5 +30,8 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {EBACDCB5-A5B5-4A0D-9870-5415320A2103}
 	EndGlobalSection
 EndGlobal

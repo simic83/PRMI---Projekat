@@ -62,7 +62,10 @@ namespace TCPServer
             Console.WriteLine($"\n⏳ Čekam povezivanje {brojKorisnika} korisnika...\n");
 
             List<Socket> klijenti = new List<Socket>();
-            var progressTask = Task.Run(() => ShowConnectionProgress());
+
+            // Obezbedjujemo da progress bar bude na posebnom redu!
+            int barTop = Console.CursorTop;
+            DrawConnectionProgress(0, brojKorisnika);
 
             while (trenutniKorisnici < brojKorisnika)
             {
@@ -73,15 +76,20 @@ namespace TCPServer
                     trenutniKorisnici++;
 
                     string klijentInfo = clientSocket.RemoteEndPoint.ToString();
-                    lock (lockObj)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine($"\r✅ Klijent #{trenutniKorisnici} povezan: {klijentInfo}");
-                        Console.ResetColor();
 
-                        // Progress bar za povezivanje
-                        DrawConnectionProgress(trenutniKorisnici, brojKorisnika);
-                    }
+                    // Uvek ispisuj novog klijenta u novi red, ispod trenutnog progress bara
+                    int oldTop = Console.CursorTop;
+                    Console.SetCursorPosition(0, barTop + trenutniKorisnici);
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"✅ Klijent #{trenutniKorisnici} povezan: {klijentInfo}                  ");
+                    Console.ResetColor();
+
+                    // Vraćanje na progress bar red i ažuriranje bara
+                    Console.SetCursorPosition(0, barTop);
+                    DrawConnectionProgress(trenutniKorisnici, brojKorisnika);
+
+                    // Pomeri kursor ispod poslednjeg reda
+                    Console.SetCursorPosition(0, barTop + trenutniKorisnici + 1);
                 }
             }
 
@@ -152,10 +160,9 @@ namespace TCPServer
             Console.WriteLine("\n🚀 Pokretanje klijenata...\n");
             Console.ResetColor();
 
-            // Relativna putanja u odnosu na folder gde je TCPServer.exe
             string baseDir = AppContext.BaseDirectory;
             string clientPath = Path.Combine(baseDir, @"..\..\..\TCPClient\bin\Debug\TCPClient.exe");
-            clientPath = Path.GetFullPath(clientPath); // Normalizacija putanje
+            clientPath = Path.GetFullPath(clientPath);
 
             if (!File.Exists(clientPath))
             {
@@ -304,6 +311,8 @@ namespace TCPServer
             }
         }
 
+        // --- SEKCIJA ZA ISPIS I FORMATIRANJE ---
+
         static void ShowServerBanner()
         {
             Console.Clear();
@@ -311,7 +320,7 @@ namespace TCPServer
             Console.WriteLine(@"
     ╔══════════════════════════════════════════════════════════════╗
     ║                                                              ║
-    ║              🧠 PSIHOLOŠKI EKSPERIMENT SERVER 🧠            ║
+    ║              🧠 PSIHOLOŠKI EKSPERIMENT SERVER 🧠             ║
     ║                                                              ║
     ║                    Kontrolni Centar                          ║
     ║                                                              ║
@@ -357,37 +366,28 @@ namespace TCPServer
             Console.ResetColor();
         }
 
+        // Ispravljeni progress bar – UVEK briše liniju
         static void DrawConnectionProgress(int current, int total)
         {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.Write("\r    Progres: [");
+            Console.Write("    Progres: [");
 
             int barWidth = 30;
             int filled = (int)(barWidth * current / (double)total);
 
+            // Zeleni ispunjeni deo
             Console.ForegroundColor = ConsoleColor.Green;
             Console.Write(new string('█', filled));
+
+            // Tamnosivi prazni deo
             Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.Write(new string('░', barWidth - filled));
 
-            Console.Write($"] {current}/{total}");
             Console.ResetColor();
+            Console.Write($"] {current}/{total}".PadRight(20)); // dovoljno dugačak padding
+
+            Console.Write("    "); // još malo praznog za svaki slučaj
         }
 
-        static void ShowConnectionProgress()
-        {
-            string[] animation = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
-            int i = 0;
-            while (trenutniKorisnici < brojKorisnika)
-            {
-                lock (lockObj)
-                {
-                    Console.SetCursorPosition(0, Console.CursorTop);
-                    Console.Write($"    {animation[i++ % animation.Length]} Čekam klijente...");
-                }
-                Thread.Sleep(100);
-            }
-        }
 
         static void ShowExperimentStatus()
         {
@@ -405,13 +405,13 @@ namespace TCPServer
         static void GenerisiIzvestaj(Dictionary<string, List<Dogadjaj>> sviDogadjaji)
         {
             Console.WriteLine("\n📊 TABELA REZULTATA:");
-            Console.WriteLine("══════════════════════════════════════════════════════════════════════════════");
+            Console.WriteLine(new string('═', 80));
 
-            // Zaglavlje sa bojama
+            // Pravilno zaglavlje sa jedinicama!
             Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("{0,-20}{1,-12}{2,-10}{3,-12}{4,-8}{5,-8}{6,-10}",
-                "Ispitanik", "Prosek", "Min", "Tačnost", "LP", "LN", "Rang");
-            Console.WriteLine("──────────────────────────────────────────────────────────────────────────────");
+            Console.WriteLine("{0,-20}{1,12}{2,12}{3,12}{4,8}{5,8}{6,8}",
+                "Ispitanik", "Prosek (ms)", "Min (ms)", "Tačnost (%)", "LP", "LN", "Rang");
+            Console.WriteLine(new string('─', 80));
             Console.ResetColor();
 
             var sortirano = sviDogadjaji
@@ -465,23 +465,21 @@ namespace TCPServer
                 .ThenBy(x => x.Prosek)
                 .ToList();
 
-            // Prikaz rezultata sa bojama i rangom
             int rang = 1;
             foreach (var rezultat in sortirano)
             {
-                // Boja na osnovu ranga
                 if (rang == 1)
-                    Console.ForegroundColor = ConsoleColor.Yellow; // Zlatna
+                    Console.ForegroundColor = ConsoleColor.Yellow;
                 else if (rang == 2)
-                    Console.ForegroundColor = ConsoleColor.Gray; // Srebrna
+                    Console.ForegroundColor = ConsoleColor.Gray;
                 else if (rang == 3)
-                    Console.ForegroundColor = ConsoleColor.DarkYellow; // Bronzana
+                    Console.ForegroundColor = ConsoleColor.DarkYellow;
                 else
                     Console.ForegroundColor = ConsoleColor.White;
 
-                string medalja = rang == 1 ? "🥇" : rang == 2 ? "🥈" : rang == 3 ? "🥉" : "  ";
+                string medalja = rang == 1 ? "🥇" : rang == 2 ? "🥈" : rang == 3 ? "🥉" : "";
 
-                Console.WriteLine("{0,-20}{1,-12:F2}ms{2,-10:F2}ms{3,-12:F1}%{4,-8}{5,-8}{6}",
+                Console.WriteLine("{0,-20}{1,12:F2}{2,12:F2}{3,12:F1}{4,8}{5,8}{6,8}",
                     rezultat.ImeKlijenta,
                     rezultat.Prosek * 1000,
                     rezultat.Min * 1000,
@@ -494,7 +492,7 @@ namespace TCPServer
                 Console.ResetColor();
             }
 
-            Console.WriteLine("══════════════════════════════════════════════════════════════════════════════");
+            Console.WriteLine(new string('═', 80));
 
             // Statistički pregled
             Console.ForegroundColor = ConsoleColor.Magenta;
