@@ -55,6 +55,7 @@ namespace TCPServer
             Socket serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             serverSocket.Bind(new IPEndPoint(IPAddress.Any, 50001));
             serverSocket.Listen(10);
+            serverSocket.Blocking = false; // NON-BLOCKING SERVER SOCKET
 
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine($"✅ Server aktivan na {serverSocket.LocalEndPoint}");
@@ -74,6 +75,8 @@ namespace TCPServer
                 if (checkRead.Count > 0)
                 {
                     Socket clientSocket = serverSocket.Accept();
+                    clientSocket.Blocking = false; // <- NON-BLOCKING CLIENT SOCKET
+
                     klijenti.Add(clientSocket);
                     trenutniKorisnici++;
 

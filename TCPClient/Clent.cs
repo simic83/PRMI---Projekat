@@ -30,7 +30,6 @@ namespace TCPClient
 
             try
             {
-                // Animacija tokom povezivanja
                 var connectTask = System.Threading.Tasks.Task.Run(() => clientSocket.Connect(serverEP));
                 while (!connectTask.IsCompleted)
                 {
@@ -85,7 +84,6 @@ namespace TCPClient
                 formatter.Serialize(ms, ispitanik);
                 byte[] data = ms.ToArray();
 
-                // Animacija slanja
                 for (int i = 0; i < 5; i++)
                 {
                     Console.Write(".");
@@ -99,7 +97,7 @@ namespace TCPClient
             }
             #endregion
 
-            #region Prijem trajanja eksperimenta (Socket.Select umesto Poll)
+            #region Prijem trajanja eksperimenta (Socket.Select)
             byte[] trajanjeData = new byte[4];
             bool trajanjePrimljeno = false;
 
@@ -108,7 +106,6 @@ namespace TCPClient
 
             while (!trajanjePrimljeno)
             {
-                // UMESTO: if (clientSocket.Poll(1000000, SelectMode.SelectRead))
                 var checkRead = new System.Collections.Generic.List<Socket> { clientSocket };
                 Socket.Select(checkRead, null, null, 1000000); // timeout 1s
 
@@ -124,7 +121,7 @@ namespace TCPClient
 
                         Thread.Sleep(1000);
 
-                        // Pokretanje simulacije
+                        // ODMAH pokreće eksperiment, bez čekanja na taster!
                         SimulacijaEksperimenta(clientSocket, formatter, trajanjeEksperimenta);
                         trajanjePrimljeno = true;
                     }
@@ -177,14 +174,11 @@ namespace TCPClient
                 brojPokusaja++;
                 Console.Clear();
 
-                // Progress bar
                 double progress = (ukupanTajmer.Elapsed.TotalSeconds / trajanjeEksperimenta) * 100;
                 DrawProgressBar(progress, trajanjeEksperimenta - (int)ukupanTajmer.Elapsed.TotalSeconds);
 
-                // Statistika
                 Console.WriteLine($"\n📊 Pokušaj: {brojPokusaja} | ✅ Tačni: {tacniOdgovori} | 📈 Tačnost: {(brojPokusaja > 0 ? (tacniOdgovori * 100.0 / brojPokusaja) : 0):F1}%\n");
 
-                // Prikaz simbola
                 string simbol = random.Next(2) == 0 ? "X" : "O";
                 Console.ForegroundColor = simbol == "X" ? ConsoleColor.Red : ConsoleColor.Green;
                 Console.WriteLine("\n\n");
@@ -213,7 +207,6 @@ namespace TCPClient
 
                 if (tacno) tacniOdgovori++;
 
-                // Prikaz rezultata
                 Console.ForegroundColor = tacno ? ConsoleColor.Green : ConsoleColor.Red;
                 Console.WriteLine($"\n{(tacno ? "✅ TAČNO" : "❌ NETAČNO")} - Reakciono vreme: {stopwatch.Elapsed.TotalMilliseconds:F0}ms");
                 Console.ResetColor();
@@ -322,7 +315,6 @@ namespace TCPClient
 
             if (symbol == "X")
             {
-                // Crveni X - ne pritiskaj
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("                    ╔════════════════════╗");
                 Console.WriteLine("                    ║                    ║");
@@ -336,7 +328,6 @@ namespace TCPClient
             }
             else
             {
-                // Zeleni O - pritisni SPACE
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine("                    ╔════════════════════╗");
                 Console.WriteLine("                    ║                    ║");
