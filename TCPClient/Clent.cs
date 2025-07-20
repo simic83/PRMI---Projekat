@@ -30,11 +30,19 @@ namespace TCPClient
 
             try
             {
-                var connectTask = System.Threading.Tasks.Task.Run(() => clientSocket.Connect(serverEP));
-                while (!connectTask.IsCompleted)
+                // Jednostavno blokirajuće povezivanje, kao na vežbama
+                while (true)
                 {
-                    Console.Write($"\r⏳ Povezivanje na server {LoadingChars[loadingIndex++ % LoadingChars.Length]}");
-                    Thread.Sleep(100);
+                    try
+                    {
+                        clientSocket.Connect(serverEP);
+                        break;
+                    }
+                    catch (SocketException)
+                    {
+                        Console.Write($"\r⏳ Povezivanje na server {LoadingChars[loadingIndex++ % LoadingChars.Length]}");
+                        Thread.Sleep(100);
+                    }
                 }
 
                 Console.ForegroundColor = ConsoleColor.Green;
@@ -152,6 +160,10 @@ namespace TCPClient
             clientSocket.Close();
             #endregion
         }
+
+        // Ostatak helper funkcija ostaje IDENTIČAN kao što si poslao!
+        // (SimulacijaEksperimenta, ShowWelcomeScreen, ShowHeader, GetInput, GetIntInput, DrawProgressBar, DrawLargeSymbol...)
+        // Sve kopiraj iz svoje poslednje verzije.
 
         static void SimulacijaEksperimenta(Socket clientSocket, BinaryFormatter formatter, int trajanjeEksperimenta)
         {

@@ -5,7 +5,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Serialization.Formatters.Binary;
-using System.Threading.Tasks;
 using System.Threading;
 using System.Diagnostics;
 using ClassLibrary;
@@ -132,17 +131,23 @@ namespace TCPServer
             Console.Clear();
             ShowExperimentRunning();
 
-            List<Task> klijentskeNiti = new List<Task>();
+            List<Thread> klijentskeNiti = new List<Thread>();
 
             foreach (var klijent in klijenti)
             {
-                klijentskeNiti.Add(Task.Run(() => ObradiKlijenta(klijent)));
+                Thread t = new Thread(() => ObradiKlijenta(klijent));
+                klijentskeNiti.Add(t);
+                t.Start();
             }
 
             // Prikaz statusa tokom eksperimenta
-            var statusTask = Task.Run(() => ShowExperimentStatus());
+            Thread statusThread = new Thread(ShowExperimentStatus);
+            statusThread.Start();
 
-            Task.WaitAll(klijentskeNiti.ToArray());
+            // Sačekaj da se svi završe
+            foreach (var t in klijentskeNiti)
+                t.Join();
+            statusThread.Join();
             #endregion
 
             #region Generisanje izveštaja
@@ -158,6 +163,8 @@ namespace TCPServer
             Console.ReadKey();
             #endregion
         }
+
+        // Ostatak koda ostaje IDENTIČAN
 
         static void PokreniKlijente(int brojKlijenata)
         {
@@ -367,6 +374,7 @@ namespace TCPServer
 
         static void ShowFinalResults()
         {
+            Console.Clear();
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine("\n    ╔════════════════════════════╗");
             Console.WriteLine("    ║    📊 FINALNI REZULTATI    ║");
