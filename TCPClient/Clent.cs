@@ -99,7 +99,7 @@ namespace TCPClient
             }
             #endregion
 
-            #region Prijem trajanja eksperimenta (Polling model)
+            #region Prijem trajanja eksperimenta (Socket.Select umesto Poll)
             byte[] trajanjeData = new byte[4];
             bool trajanjePrimljeno = false;
 
@@ -108,7 +108,11 @@ namespace TCPClient
 
             while (!trajanjePrimljeno)
             {
-                if (clientSocket.Poll(1000000, SelectMode.SelectRead))
+                // UMESTO: if (clientSocket.Poll(1000000, SelectMode.SelectRead))
+                var checkRead = new System.Collections.Generic.List<Socket> { clientSocket };
+                Socket.Select(checkRead, null, null, 1000000); // timeout 1s
+
+                if (checkRead.Count > 0)
                 {
                     int received = clientSocket.Receive(trajanjeData);
                     if (received > 0)
@@ -162,11 +166,6 @@ namespace TCPClient
             Console.ResetColor();
             Console.WriteLine("• Pritisnite SPACE kada vidite simbol 'O'");
             Console.WriteLine("• Ignorišite simbol 'X'\n");
-
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("Pritisnite bilo koji taster kada ste spremni...");
-            Console.ResetColor();
-            Console.ReadKey(true);
 
             Random random = new Random();
             Stopwatch ukupanTajmer = Stopwatch.StartNew();

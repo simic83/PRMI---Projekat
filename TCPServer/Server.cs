@@ -69,7 +69,9 @@ namespace TCPServer
 
             while (trenutniKorisnici < brojKorisnika)
             {
-                if (serverSocket.Poll(2000 * 1000, SelectMode.SelectRead))
+                var checkRead = new List<Socket> { serverSocket };
+                Socket.Select(checkRead, null, null, 2000 * 1000);
+                if (checkRead.Count > 0)
                 {
                     Socket clientSocket = serverSocket.Accept();
                     klijenti.Add(clientSocket);
@@ -220,7 +222,10 @@ namespace TCPServer
                 {
                     if (clientSocket == null || !clientSocket.Connected) break;
 
-                    if (clientSocket.Poll(1500 * 1000, SelectMode.SelectRead))
+                    var checkRead = new List<Socket> { clientSocket };
+                    Socket.Select(checkRead, null, null, 1500 * 1000);
+
+                    if (checkRead.Count > 0)
                     {
                         byte[] buffer = new byte[1024];
                         int bytesRead = clientSocket.Receive(buffer);
@@ -507,7 +512,7 @@ namespace TCPServer
             Console.WriteLine($"   • Prosečna tačnost grupe: {prosecnaTacnost:F1}%");
             Console.WriteLine($"   • Prosečno vreme reakcije: {prosecnoVremeReakcije:F0}ms");
             Console.WriteLine($"   • Najtačniji ispitanik: {najtacnijiIspitanik.ImeKlijenta} ({najtacnijiIspitanik.Tacnost:F1}%)");
-            Console.WriteLine($"   • Najbrži ispitanik: {najbrziIspitanik.ImeKlijenta} ({najbrziIspitanik.Prosek * 1000:F0}ms)");
+            Console.WriteLine($"   • Najbrži ispitanik: {najbrziIspitanik.ImeKlijenta} ({najtacnijiIspitanik.Prosek * 1000:F0}ms)");
         }
 
         static void GenerisiCSV(Dictionary<string, List<Dogadjaj>> sviDogadjaji, string putanja)
@@ -580,3 +585,4 @@ namespace TCPServer
         }
     }
 }
+
