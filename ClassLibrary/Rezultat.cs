@@ -9,6 +9,7 @@ namespace ClassLibrary
     [Serializable]
     public class Rezultat
     {
+        public string ImeKlijenta { get; set; }
         public double ProsecnoReakcionoVreme { get; set; }
         public double MinimalnoReakcionoVreme { get; set; }
         public double Tacnost { get; set; }

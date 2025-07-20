@@ -34,7 +34,6 @@ namespace TCPServer
             brojKorisnika = int.Parse(Console.ReadLine());
             Console.ResetColor();
 
-            // Pitanje za automatsko pokretanje
             Console.ForegroundColor = ConsoleColor.Magenta;
             Console.Write("\n🤖 Želite li automatski pokrenuti klijente? (D/N): ");
             Console.ForegroundColor = ConsoleColor.Yellow;
@@ -69,7 +68,9 @@ namespace TCPServer
 
             while (trenutniKorisnici < brojKorisnika)
             {
+                // Mora lista zato sto Socket.Select očekuje listu kao prvi parametar
                 var checkRead = new List<Socket> { serverSocket };
+                // 2000 * 1000 mikrosekundi = 2s, gledamo ako 2000ms, jer u ostatku koda radimo sa ms
                 Socket.Select(checkRead, null, null, 2000 * 1000);
                 if (checkRead.Count > 0)
                 {
@@ -81,8 +82,7 @@ namespace TCPServer
 
                     string klijentInfo = clientSocket.RemoteEndPoint.ToString();
 
-                    // Uvek ispisuj novog klijenta u novi red, ispod trenutnog progress bara
-                    int oldTop = Console.CursorTop;
+                    // Uvek ispisuj novog klijenta u novi red, ispod trenutnog progress bar-a
                     Console.SetCursorPosition(0, barTop + trenutniKorisnici);
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"✅ Klijent #{trenutniKorisnici} povezan: {klijentInfo}                  ");
@@ -129,6 +129,7 @@ namespace TCPServer
 
             #region Prikupljanje događaja
             Console.Clear();
+            // Banner
             ShowExperimentRunning();
 
             List<Thread> klijentskeNiti = new List<Thread>();
@@ -163,8 +164,6 @@ namespace TCPServer
             Console.ReadKey();
             #endregion
         }
-
-        // Ostatak koda ostaje IDENTIČAN
 
         static void PokreniKlijente(int brojKlijenata)
         {
@@ -232,6 +231,7 @@ namespace TCPServer
                 {
                     if (clientSocket == null || !clientSocket.Connected) break;
 
+                    // Mora lista zato što Socket.Select očekuje listu kao parametar
                     var checkRead = new List<Socket> { clientSocket };
                     Socket.Select(checkRead, null, null, 1500 * 1000);
 
@@ -423,62 +423,62 @@ namespace TCPServer
             Console.WriteLine("\n📊 TABELA REZULTATA:");
             Console.WriteLine(new string('═', 80));
 
-            // Pravilno zaglavlje sa jedinicama!
+            // Zaglavlje
             Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("{0,-20}{1,12}{2,12}{3,12}{4,8}{5,8}{6,8}",
+            Console.WriteLine("{0,-20}{1,14}{2,12}{3,14}{4,8}{5,8}{6,8}",
                 "Ispitanik", "Prosek (ms)", "Min (ms)", "Tačnost (%)", "LP", "LN", "Rang");
             Console.WriteLine(new string('─', 80));
             Console.ResetColor();
 
-            var sortirano = sviDogadjaji
-                .Select(kv =>
+            // Pravimo listu rezultata
+            var sortirano = new List<Rezultat>();
+
+            foreach (var par in sviDogadjaji)
+            {
+                string imeKlijenta = par.Key;
+                List<Dogadjaj> dogadjaji = par.Value;
+
+                double ukupnoVreme = 0;
+                double minimalnoVreme = double.MaxValue;
+                int tacniOdgovori = 0;
+                int lazniPozitivi = 0;
+                int lazniNegativi = 0;
+
+                foreach (var dogadjaj in dogadjaji)
                 {
-                    string imeKlijenta = kv.Key;
-                    List<Dogadjaj> dogadjaji = kv.Value;
+                    ukupnoVreme += dogadjaj.ReakcionoVreme;
+                    if (dogadjaj.ReakcionoVreme < minimalnoVreme)
+                        minimalnoVreme = dogadjaj.ReakcionoVreme;
 
-                    double ukupnoVreme = 0;
-                    double minimalnoVreme = double.MaxValue;
-                    int tacniOdgovori = 0;
-                    int lazniPozitivi = 0;
-                    int lazniNegativi = 0;
+                    if (dogadjaj.Tacnost)
+                        tacniOdgovori++;
+                    else if (dogadjaj.PrikazaniSimbol == "X" && dogadjaj.PritisnutiSimbol == "O")
+                        lazniPozitivi++;
+                    else if (dogadjaj.PrikazaniSimbol == "O" && dogadjaj.PritisnutiSimbol == "Ignorisano")
+                        lazniNegativi++;
+                }
 
-                    foreach (var dogadjaj in dogadjaji)
-                    {
-                        ukupnoVreme += dogadjaj.ReakcionoVreme;
-                        if (dogadjaj.ReakcionoVreme < minimalnoVreme)
-                        {
-                            minimalnoVreme = dogadjaj.ReakcionoVreme;
-                        }
+                double prosecnoVreme = ukupnoVreme / dogadjaji.Count;
+                double tacnost = (double)tacniOdgovori / dogadjaji.Count * 100;
+                double stopaLP = (double)lazniPozitivi / dogadjaji.Count * 100;
+                double stopaLN = (double)lazniNegativi / dogadjaji.Count * 100;
 
-                        if (dogadjaj.Tacnost)
-                        {
-                            tacniOdgovori++;
-                        }
-                        else if (dogadjaj.PrikazaniSimbol == "X" && dogadjaj.PritisnutiSimbol == "O")
-                        {
-                            lazniPozitivi++;
-                        }
-                        else if (dogadjaj.PrikazaniSimbol == "O" && dogadjaj.PritisnutiSimbol == "Ignorisano")
-                        {
-                            lazniNegativi++;
-                        }
-                    }
+                // Dodajemo rezultat u listu
+                sortirano.Add(new Rezultat
+                {
+                    ImeKlijenta = imeKlijenta,
+                    ProsecnoReakcionoVreme = prosecnoVreme,
+                    MinimalnoReakcionoVreme = minimalnoVreme,
+                    Tacnost = tacnost,
+                    StopaLaznihPozitiva = stopaLP,
+                    StopaLaznihNegativa = stopaLN
+                });
+            }
 
-                    double prosecnoVreme = ukupnoVreme / dogadjaji.Count;
-                    double tacnost = (double)tacniOdgovori / dogadjaji.Count * 100;
-
-                    return new
-                    {
-                        ImeKlijenta = imeKlijenta,
-                        Prosek = prosecnoVreme,
-                        Min = minimalnoVreme,
-                        Tacnost = tacnost,
-                        LP = lazniPozitivi,
-                        LN = lazniNegativi
-                    };
-                })
+            // Sortiramo
+            sortirano = sortirano
                 .OrderByDescending(x => x.Tacnost)
-                .ThenBy(x => x.Prosek)
+                .ThenBy(x => x.ProsecnoReakcionoVreme)
                 .ToList();
 
             int rang = 1;
@@ -495,13 +495,13 @@ namespace TCPServer
 
                 string medalja = rang == 1 ? "🥇" : rang == 2 ? "🥈" : rang == 3 ? "🥉" : "";
 
-                Console.WriteLine("{0,-20}{1,12:F2}{2,12:F2}{3,12:F1}{4,8}{5,8}{6,8}",
+                Console.WriteLine("{0,-20}{1,14:F2}{2,12:F2}{3,14:F1}{4,8:F1}{5,8:F1}{6,8}",
                     rezultat.ImeKlijenta,
-                    rezultat.Prosek * 1000,
-                    rezultat.Min * 1000,
+                    rezultat.ProsecnoReakcionoVreme * 1000, // u ms
+                    rezultat.MinimalnoReakcionoVreme * 1000, // u ms
                     rezultat.Tacnost,
-                    rezultat.LP,
-                    rezultat.LN,
+                    rezultat.StopaLaznihPozitiva,
+                    rezultat.StopaLaznihNegativa,
                     medalja);
 
                 rang++;
@@ -516,15 +516,16 @@ namespace TCPServer
             Console.ResetColor();
 
             var prosecnaTacnost = sortirano.Average(x => x.Tacnost);
-            var prosecnoVremeReakcije = sortirano.Average(x => x.Prosek) * 1000;
-            var najbrziIspitanik = sortirano.OrderBy(x => x.Prosek).First();
+            var prosecnoVremeReakcije = sortirano.Average(x => x.ProsecnoReakcionoVreme) * 1000;
+            var najbrziIspitanik = sortirano.OrderBy(x => x.ProsecnoReakcionoVreme).First();
             var najtacnijiIspitanik = sortirano.First();
 
             Console.WriteLine($"   • Prosečna tačnost grupe: {prosecnaTacnost:F1}%");
             Console.WriteLine($"   • Prosečno vreme reakcije: {prosecnoVremeReakcije:F0}ms");
             Console.WriteLine($"   • Najtačniji ispitanik: {najtacnijiIspitanik.ImeKlijenta} ({najtacnijiIspitanik.Tacnost:F1}%)");
-            Console.WriteLine($"   • Najbrži ispitanik: {najbrziIspitanik.ImeKlijenta} ({najtacnijiIspitanik.Prosek * 1000:F0}ms)");
+            Console.WriteLine($"   • Najbrži ispitanik: {najbrziIspitanik.ImeKlijenta} ({najtacnijiIspitanik.ProsecnoReakcionoVreme * 1000:F0}ms)");
         }
+
 
         static void GenerisiCSV(Dictionary<string, List<Dogadjaj>> sviDogadjaji, string putanja)
         {
@@ -578,7 +579,6 @@ namespace TCPServer
                 Console.WriteLine($"\n💾 CSV izveštaj uspešno generisan: {Path.GetFullPath(putanja)}");
                 Console.ResetColor();
 
-                // Vizuelni prikaz da je fajl kreiran
                 Console.ForegroundColor = ConsoleColor.DarkGreen;
                 Console.WriteLine(@"
     ╔══════════════════════════════════╗

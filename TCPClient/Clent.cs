@@ -13,6 +13,7 @@ namespace TCPClient
     {
         private static readonly string[] LoadingChars = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
         private static int loadingIndex = 0;
+        int i = 0;
 
         static void Main(string[] args)
         {
@@ -30,7 +31,7 @@ namespace TCPClient
 
             try
             {
-                // Jednostavno blokirajuće povezivanje, kao na vežbama
+                int j = 0;
                 while (true)
                 {
                     try
@@ -40,8 +41,11 @@ namespace TCPClient
                     }
                     catch (SocketException)
                     {
-                        Console.Write($"\r⏳ Povezivanje na server {LoadingChars[loadingIndex++ % LoadingChars.Length]}");
+                        Console.Write($"\rPovezivanje na server {LoadingChars[j]}");
                         Thread.Sleep(100);
+                        j++;
+                        if (j >= LoadingChars.Length)
+                            j = 0;
                     }
                 }
 
@@ -92,7 +96,7 @@ namespace TCPClient
                 formatter.Serialize(ms, ispitanik);
                 byte[] data = ms.ToArray();
 
-                for (int i = 0; i < 5; i++)
+                for (int k = 0; k < 5; k++)
                 {
                     Console.Write(".");
                     Thread.Sleep(200);
@@ -112,10 +116,11 @@ namespace TCPClient
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.Write("\n⏱️  Čekanje na instrukcije");
 
+            int i = 0;
             while (!trajanjePrimljeno)
             {
                 var checkRead = new System.Collections.Generic.List<Socket> { clientSocket };
-                Socket.Select(checkRead, null, null, 1000000); // timeout 1s
+                Socket.Select(checkRead, null, null, 1000 * 1000); // timeout 1s
 
                 if (checkRead.Count > 0)
                 {
@@ -129,16 +134,21 @@ namespace TCPClient
 
                         Thread.Sleep(1000);
 
-                        // ODMAH pokreće eksperiment, bez čekanja na taster!
+                        // Odmah pokreće eksperiment
                         SimulacijaEksperimenta(clientSocket, formatter, trajanjeEksperimenta);
                         trajanjePrimljeno = true;
                     }
                 }
                 else
                 {
-                    Console.Write($"\r⏱️  Čekanje na instrukcije {LoadingChars[loadingIndex++ % LoadingChars.Length]}");
+                    Console.Write($"\r⏱️  Čekanje na instrukcije {LoadingChars[i]}");
+                    Thread.Sleep(100);
+                    i++;
+                    if (i == LoadingChars.Length)
+                        i = 0;
                 }
             }
+
             #endregion
 
             #region Zatvaranje
@@ -160,10 +170,6 @@ namespace TCPClient
             clientSocket.Close();
             #endregion
         }
-
-        // Ostatak helper funkcija ostaje IDENTIČAN kao što si poslao!
-        // (SimulacijaEksperimenta, ShowWelcomeScreen, ShowHeader, GetInput, GetIntInput, DrawProgressBar, DrawLargeSymbol...)
-        // Sve kopiraj iz svoje poslednje verzije.
 
         static void SimulacijaEksperimenta(Socket clientSocket, BinaryFormatter formatter, int trajanjeEksperimenta)
         {
@@ -269,11 +275,17 @@ namespace TCPClient
         static void ShowHeader(string title)
         {
             Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine($"\n    ╔══════════════════════════════════════════╗");
-            Console.WriteLine($"    ║   {title.PadRight(38)}    ║");
-            Console.WriteLine($"    ╚══════════════════════════════════════════╝\n");
+
+            int padding = 4;
+            int width = title.Length + padding * 2;
+            string border = new string('═', width);
+
+            Console.WriteLine($"\n    ╔{border}╗");
+            Console.WriteLine($"    ║{new string(' ', padding)}{title}{new string(' ', padding)}║");
+            Console.WriteLine($"    ╚{border}╝\n");
             Console.ResetColor();
         }
+
 
         static string GetInput(string prompt, ConsoleColor color)
         {
